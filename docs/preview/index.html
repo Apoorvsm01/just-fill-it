@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Just Fill it! preview</title>
+<meta property="og:site_name" content="Example Streaming Co.">
+<!--
+  Preview harness: runs the real extension/content.js over a mock job posting with a stubbed
+  `chrome` API, so the panel can be screenshotted in either theme without installing anything.
+  ?theme=m3 (Chrome, Material 3) or ?theme=glass (Safari, Liquid Glass); &state=busy|done|min.
+-->
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1d1d1f;
+    background: #fff; }
+  .hero { height: 220px; background: linear-gradient(120deg, #ff7a59 0%, #ffb347 30%, #5ac8fa 65%, #5856d6 100%); }
+  main { max-width: 760px; margin: -120px 0 0 48px; background: #fff; border-radius: 16px; padding: 32px 40px;
+    box-shadow: 0 10px 40px rgba(0,0,0,.12); position: relative; }
+  h1 { margin: 0 0 4px; font-size: 30px; }
+  .co { color: #555; margin-bottom: 18px; }
+  .tags span { display: inline-block; background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 4px 12px; margin: 0 6px 6px 0; font-size: 13px; }
+  h2 { font-size: 18px; margin: 24px 0 8px; }
+  li { margin-bottom: 6px; line-height: 1.5; }
+  .upload { margin-top: 24px; border: 2px dashed #c7c7cc; border-radius: 12px; padding: 22px; text-align: center; color: #666; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #000; color: #f5f5f7; }
+    main { background: #1c1c1e; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+    .co { color: #aaa; } .tags span { background: #2c2c54; color: #c7d2fe; } .upload { border-color: #48484a; color: #aaa; }
+  }
+</style>
+</head>
+<body>
+<div class="hero"></div>
+<main>
+  <h1>Senior Product Designer</h1>
+  <div class="co">Example Streaming Co. · New York, NY · Hybrid</div>
+  <div class="tags"><span>Product design</span><span>Design systems</span><span>AI-assisted workflows</span><span>Figma</span></div>
+  <h2>What you'll do</h2>
+  <ul>
+    <li>Design acquisition, subscription and purchase funnel experiences across TV, mobile and web.</li>
+    <li>Turn product requirements and user needs into end-to-end flows, prototypes and high-fidelity designs.</li>
+    <li>Use AI-assisted design tools for ideation, prototyping and research synthesis.</li>
+    <li>Present design rationale and drive alignment with product, engineering and QA.</li>
+  </ul>
+  <h2>Apply</h2>
+  <div class="upload">Resume / CV <input type="file" aria-label="Resume"> &nbsp; Cover letter <input type="file" aria-label="Cover letter"></div>
+</main>
+<script>
+  const params = new URLSearchParams(location.search);
+  const theme = params.get("theme") || "m3";
+  const state = params.get("state") || "done";
+  const now = Date.now();
+  const runs = {
+    done: [
+      { id: "a1", kind: "cover_letter", status: "done", model: "fast", company: "Northwind Labs", title: "Product Designer",
+        pageUrl: "https://example.com/jobs/2", startedAt: now - 86400000, finishedAt: now - 86300000, files: [{ index: 0, name: "Jane Doe Cover Letter.pdf", path: "x" }] },
+      { id: "a2", kind: "resume", status: "done", model: "fast", company: "Example Streaming Co.", title: "Senior Product Designer",
+        pageUrl: location.href, startedAt: now - 90000, finishedAt: now - 60000, elapsed_seconds: 31,
+        report: "Layout: 1 page, 99.1% full, 3 bullet(s) shortened to fit.\nModel: fast (12,949 tokens in, 5,116 out, 30s).",
+        files: [{ index: 0, name: "Jane Doe Senior Product Designer Resume.pdf", path: "y" }] },
+    ],
+    busy: [{ id: "b1", kind: "cover_letter", status: "running", model: "best", company: "Example Streaming Co.",
+             title: "Senior Product Designer", pageUrl: location.href, startedAt: now - 9000, elapsed_seconds: 9, files: [] }],
+  };
+  const store = { model: "fast", research: true, minimized: state === "min",
+                  notesDraft: "Lead with design systems and the payment flow work.", runs: runs[state] || runs.done };
+  window.chrome = {
+    runtime: {
+      getURL: () => (theme === "glass" ? "safari-web-extension://preview/" : "chrome-extension://preview/"),
+      lastError: undefined,
+      sendMessage(message, reply) {
+        const answers = { ping: { ok: true }, runs: store.runs, pin: true, unpin: true, dismiss: store.runs };
+        setTimeout(() => reply({ ok: true, result: answers[message.type] ?? true }), 0);
+      },
+    },
+    storage: {
+      local: { get(defaults, cb) { cb({ ...defaults, ...store }); }, set() {} },
+      onChanged: { addListener() {} },
+    },
+  };
+</script>
+<script src="../../extension/content.js"></script>
+</body>
+</html>

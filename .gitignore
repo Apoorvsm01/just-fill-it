@@ -1,0 +1,14 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+# Xcode build output and per-user state
+safari/**/build/
+safari/**/xcuserdata/
+*.xcuserstate
+# Local signing team (see scripts/build_safari.sh)
+safari/Local.xcconfig
+.DS_Store
+logs/

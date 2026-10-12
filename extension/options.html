@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Just Fill it! settings</title>
+<style>
+  :root { --bg:#fff; --fg:#1d1d1f; --muted:#6e6e73; --line:#d2d2d7; --accent:#0a66c2; --ok:#1a7f37; --bad:#c62828; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1e1f22; --fg:#f2f2f2; --muted:#a1a1a6; --line:#3a3b3f; --accent:#4c9aff; --ok:#3fb950; --bad:#ff6b6b; } }
+  body { background: var(--bg); color: var(--fg); font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 560px; margin: 40px auto; padding: 0 16px; }
+  label { display:block; margin: 16px 0 4px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  input { width: 100%; box-sizing: border-box; font: inherit; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); }
+  button { margin-top: 16px; font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  code { background: rgba(127,127,127,.15); padding: 1px 5px; border-radius: 4px; }
+  #status { margin-top: 12px; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+
+  /* Material 3 (Chrome) */
+  body.m3 { --primary:#0b57d0; --on-primary:#fff; --surface:#f8fafd; --on-surface:#1f1f1f; --on-surface-variant:#444746; --outline:#747775;
+    background: var(--surface); color: var(--on-surface); font-family: "Google Sans Text", "Google Sans", Roboto, system-ui, sans-serif; }
+  @media (prefers-color-scheme: dark) { body.m3 { --primary:#a8c7fa; --on-primary:#062e6f; --surface:#1f1f1f; --on-surface:#e3e3e3; --on-surface-variant:#c4c7c5; --outline:#8e918f; } }
+  body.m3 h1 { font: 400 28px "Google Sans", Roboto, sans-serif; }
+  body.m3 label { text-transform: none; letter-spacing: .1px; font-weight: 500; color: var(--on-surface-variant); }
+  body.m3 input { border-radius: 4px; border: 1px solid var(--outline); background: transparent; color: var(--on-surface); padding: 12px; }
+  body.m3 input:focus { outline: none; border: 2px solid var(--primary); padding: 11px; }
+  body.m3 button { border-radius: 20px; height: 40px; padding: 0 24px; border: none; background: var(--primary); color: var(--on-primary); font-weight: 500; }
+
+  /* Liquid Glass (Safari) */
+  body.glass { min-height: 100vh; margin: 0 auto; padding: 40px 16px; max-width: none;
+    background: radial-gradient(1200px 600px at 10% -10%, #9ec9ff 0%, transparent 60%),
+                radial-gradient(900px 500px at 110% 10%, #ffc3e1 0%, transparent 55%),
+                linear-gradient(180deg, #eef3fb, #f7f2f8);
+    font-family: -apple-system, "SF Pro Text", sans-serif; }
+  @media (prefers-color-scheme: dark) { body.glass {
+    background: radial-gradient(1200px 600px at 10% -10%, #1f3a66 0%, transparent 60%),
+                radial-gradient(900px 500px at 110% 10%, #4a2140 0%, transparent 55%),
+                linear-gradient(180deg, #111216, #17151a); } }
+  body.glass .card { max-width: 520px; margin: 0 auto; padding: 24px 28px 28px; border-radius: 28px; position: relative;
+    background: rgba(255,255,255,.55); border: 1px solid rgba(255,255,255,.75);
+    -webkit-backdrop-filter: blur(30px) saturate(190%); backdrop-filter: blur(30px) saturate(190%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.8), 0 24px 60px rgba(0,0,0,.18); }
+  @media (prefers-color-scheme: dark) { body.glass .card { background: rgba(36,36,40,.5); border-color: rgba(255,255,255,.2);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 24px 60px rgba(0,0,0,.5); } }
+  body.glass h1 { font-size: 22px; letter-spacing: -.02em; margin-top: 0; }
+  body.glass label { text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 13px; }
+  body.glass input { border-radius: 14px; background: rgba(255,255,255,.4); border-color: rgba(255,255,255,.6); }
+  @media (prefers-color-scheme: dark) { body.glass input { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.16); } }
+  body.glass button { border-radius: 999px; padding: 10px 18px; border: 1px solid rgba(255,255,255,.35);
+    background: linear-gradient(180deg, rgba(64,156,255,.95), rgba(10,132,255,.92));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 6px 16px rgba(10,132,255,.32); }
+</style>
+</head>
+<body>
+<div class="card">
+<h1>Just Fill it!</h1>
+<p>The extension talks to the Just Fill it! helper running on this Mac. The token is printed when the helper starts and saved in <code>data/apply-helper/token</code> inside your job-hunter folder (<code>uv run just-fill-it</code> prints it).</p>
+<label for="port">Helper port</label>
+<input id="port" type="number" min="1" max="65535" value="8767">
+<label for="token">Token</label>
+<input id="token" type="password" autocomplete="off" spellcheck="false">
+<button id="save">Save and test</button>
+<div id="status"></div>
+</div>
+<script src="options.js"></script>
+</body>
+</html>
