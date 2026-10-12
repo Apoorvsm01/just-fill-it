@@ -396,3 +396,9 @@ def test_parse_claude_output():
     assert parse_claude_output(body) == ("done", False, {"output_tokens": 3})
     assert parse_claude_output("plain") == ("plain", False, {})
     assert Kind("cover_letter") is Kind.COVER_LETTER
+
+
+def test_recipient_location_is_one_line():
+    assert ac.recipient_location("New York, New York; Chicago, Illinois") == "New York, New York"
+    assert ac.recipient_location("Chicago, IL, United States") == "Chicago, IL"
+    assert ac.recipient_location("") == ""

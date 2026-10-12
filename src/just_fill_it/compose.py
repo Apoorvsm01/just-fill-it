@@ -306,7 +306,8 @@ def letter_prompt(*, jd: str, source_resume: str, rules: str, style: str, letter
                   research: bool) -> str:
     schema = {
         "recipient": "hiring manager's name if the job gives one, else 'Hiring Manager'",
-        "company": "company name", "location": "job location if given, else ''",
+        "company": "company name",
+        "location": "ONE city for the recipient block, as 'City, ST' (e.g. 'Chicago, IL'): if the job lists several, the one the applicant lives in or is applying for; '' if none given",
         "salutation": "e.g. 'Dear Hiring Manager,'",
         "paragraphs": ["the letter body paragraphs, prose only"],
         "closing": ["closing line(s) before the sign-off, per the applicant's style"],
@@ -398,11 +399,18 @@ LETTER_CSS = """
 """
 
 
+def recipient_location(text: str) -> str:
+    """One location line for the letter's recipient block: the first of several ('A; B'), without a
+    trailing country (a US letter doesn't print 'United States')."""
+    first = text.split(";")[0].strip()
+    return re.sub(r",\s*(United States|USA|US)$", "", first, flags=re.I).strip()
+
+
 def render_letter(draft: LetterDraft, contact: ContactInfo, portfolio: str | None, today: date) -> str:
     bits = [contact.email, contact.phone, contact.github and f"https://{contact.github.removeprefix('https://')}",
             contact.linkedin and f"https://{contact.linkedin.removeprefix('https://')}", portfolio]
     contact_line = " | ".join(_e(b) for b in bits if b)
-    recipient = "<br>".join(_e(x) for x in (draft.recipient, draft.company, draft.location) if x)
+    recipient = "<br>".join(_e(x) for x in (draft.recipient, draft.company, recipient_location(draft.location)) if x)
     body = "\n".join(f"<p>{_e(p)}</p>" for p in draft.paragraphs + draft.closing)
     return (
         f"<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n"
