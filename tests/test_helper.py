@@ -275,6 +275,7 @@ def test_cover_letter_one_shot(tmp_path):
     command = calls[0]["command"]
     assert command[command.index("--tools") + 1] == "WebSearch"
     assert "at most 2 searches" in calls[0]["stdin"] and "100 words max" in calls[0]["stdin"]
+    assert "No fragments" in calls[0]["stdin"] and "Never offer to relocate" in calls[0]["stdin"]
     html_text = pdf.with_suffix(".html.txt").read_text()
     assert "https://jane.example.com" in html_text and "Thanks and Regards,<br>Jane Doe" in html_text
     assert "Body: 5 words" in task.report and "acme.example/news" in task.report

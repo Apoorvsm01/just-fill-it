@@ -57,11 +57,14 @@
       const items = [].concat(data, data?.["@graph"] || []).flat();
       const job = items.find((d) => d && [].concat(d["@type"]).includes("JobPosting"));
       if (!job) continue;
-      const place = [].concat(job.jobLocation || [])[0]?.address || {};
+      // Every listed location, not just the first: a job offered in "New York; Chicago" must not read as New York only.
+      const places = [].concat(job.jobLocation || []).map((p) => p?.address || {}).map((a) =>
+        clean([a.addressLocality, a.addressRegion, a.addressCountry?.name || a.addressCountry].filter((x) => x && x !== "UNAVAILABLE").join(", ")));
+      const remote = /TELECOMMUTE/i.test(String(job.jobLocationType || "")) ? ["Remote"] : [];
       return {
         title: clean(job.title),
         company: clean(job.hiringOrganization?.name),
-        location: clean([place.addressLocality, place.addressRegion, place.addressCountry?.name || place.addressCountry].filter(Boolean).join(", ")),
+        location: [...new Set([...places.filter(Boolean), ...remote])].join("; "),
         text: String(job.description || ""),
         source: "the page's structured job data",
       };

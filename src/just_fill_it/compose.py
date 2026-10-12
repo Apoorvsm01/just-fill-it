@@ -284,6 +284,24 @@ def resume_prompt(layout: ResumeLayout, *, jd: str, master_resume: str, rules: s
     return "\n\n".join(parts)
 
 
+LETTER_QUALITY = """\
+- It must read as natural, connected prose a hiring manager enjoys reading: every sentence complete and
+  grammatical, each one following from the last, with transitions between ideas. No fragments, no telegraphic
+  sentences ("A fixed-distance trigger caused it."), no lines that just restate the job description.
+- "Short sentences" in the style guide means plain and direct, not clipped: vary sentence length.
+- Tell the story as one flowing account (what happened, why, what you changed, what changed for people),
+  not as separate one-line steps.
+- Weave the applicant's own instructions for this run in naturally; never paste them as a list of facts.
+- Location: the job may list several locations (separated by ';' on the second line of the job
+  description). If the applicant says where they live and that city is one of the job's locations, say they
+  are based there; mention relocation only for a city they don't live in. Never offer to relocate to one
+  listed city when they already live in another listed city.
+- The word limit is a target. If the applicant's instructions add content, up to ~150 words is fine;
+  coherence wins over the count.
+- Before answering, reread the letter as the hiring manager would and fix anything awkward, unclear or
+  ungrammatical."""
+
+
 def letter_prompt(*, jd: str, source_resume: str, rules: str, style: str, letter_rules: str, notes: str,
                   research: bool) -> str:
     schema = {
@@ -307,6 +325,7 @@ def letter_prompt(*, jd: str, source_resume: str, rules: str, style: str, letter
     parts = [
         "Write the applicant's cover letter for the job below, following their cover-letter rules, "
         "writing style and personalization rules. " + research_line,
+        _block("quality_bar", LETTER_QUALITY),
         _block("cover_letter_rules", letter_rules),
         _block("writing_style", style),
         _block("applicant_rules", rules),
