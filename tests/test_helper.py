@@ -168,7 +168,7 @@ def fake_claude(payload, calls=None, returncode=0):
 def make_composer(root, payload=None, calls=None, returncode=0):
     fake_project(root)
     payload = payload or RESUME_JSON
-    return Composer(root, runner=fake_claude(payload, calls, returncode), renderer_factory=FakeRenderer,
+    return Composer(root, work_root=root / "state/work", runner=fake_claude(payload, calls, returncode), renderer_factory=FakeRenderer,
                     contact_loader=lambda: ContactInfo(name="Jane Doe", email="jane@example.com",
                                                        linkedin="linkedin.com/in/janedoe"),
                     today=lambda: TODAY)

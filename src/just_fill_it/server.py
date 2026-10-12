@@ -6,7 +6,7 @@ Each run is one tool-free Claude call on a compact context pack ; Python
 lays out the PDF (just_fill_it.compose). The extension picks Fast (Sonnet) or Best (Opus) per run.
 
 Loopback only, and every /api request except /api/health must carry the token from
-`data/apply-helper/token` (printed at startup; paste it into the extension's settings once), so
+`state/token` in this repo (its path is printed at startup; paste it into the extension's settings once), so
 other websites open in the browser cannot start runs. Job text is saved as a file and reaches
 Claude only inside the piped prompt; the call has no tools except optional WebSearch.
 
@@ -37,7 +37,9 @@ from pydantic import ValidationError
 from .helper import Composer, PageJob, TaskQueue, load_or_create_token, save_page_jd
 
 MAX_BODY_BYTES = 1024 * 1024
-STATE_DIR = Path("data/apply-helper")
+# The helper's own state (token, draft HTML) stays in this repo, never in job-hunter.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+STATE_DIR = REPO_ROOT / "state"
 OUTPUT_ROOT = Path("data/output")
 CONTENT_TYPES = {
     ".pdf": "application/pdf",
@@ -114,7 +116,7 @@ class HelperHandler(BaseHTTPRequestHandler):
             self._json(403, {"error": "requests from web pages are not allowed"})
             return False
         if auth and not token_matches(self.headers.get("Authorization"), self.server.token):
-            self._json(401, {"error": "missing or wrong token: paste data/apply-helper/token into the extension settings"})
+            self._json(401, {"error": "missing or wrong token: paste state/token (in the Just Fill it! folder) into the extension settings"})
             return False
         return True
 
@@ -207,18 +209,19 @@ def main(argv: list[str] | None = None) -> int:
     if shutil.which(args.claude_bin) is None:
         print(f"just-fill-it: '{args.claude_bin}' not found on PATH; pass --claude-bin", file=sys.stderr)
         return 2
-    load_or_create_token(root / STATE_DIR / "token")
-    token = (root / STATE_DIR / "token").read_text(encoding="utf-8").strip()
+    load_or_create_token(STATE_DIR / "token")
+    token = (STATE_DIR / "token").read_text(encoding="utf-8").strip()
     try:
         with run_lock("just-fill-it"):
-            queue = TaskQueue(root, Composer(root, claude_bin=args.claude_bin, timeout=args.timeout_minutes * 60))
+            queue = TaskQueue(root, Composer(root, work_root=STATE_DIR / "work", claude_bin=args.claude_bin,
+                                            timeout=args.timeout_minutes * 60))
             try:
                 server = HelperServer(args.port, token, queue, root)
             except OSError as exc:
                 print(f"just-fill-it: cannot listen on 127.0.0.1:{args.port}: {exc}", file=sys.stderr)
                 return 2
             print(f"Just Fill it! helper listening on http://127.0.0.1:{server.server_address[1]} (Ctrl+C to stop)")
-            print(f"Extension token: {root / STATE_DIR / 'token'} (paste it into the extension settings once)", flush=True)
+            print(f"Extension token: {STATE_DIR / 'token'} (paste it into the extension settings once)", flush=True)
             try:
                 server.serve_forever()
             except KeyboardInterrupt:

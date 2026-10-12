@@ -1,4 +1,4 @@
-// Service worker: talks to the local apply-helper server (content scripts can't reach 127.0.0.1
+// Service worker: talks to the local Just Fill it! helper (content scripts can't reach 127.0.0.1
 // because of the page's CORS rules), keeps the run history, and re-opens the panel after every page
 // load in tabs where you opened it ("pinned" until you close it with ×).
 

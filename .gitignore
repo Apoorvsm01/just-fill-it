@@ -12,3 +12,5 @@ safari/**/xcuserdata/
 safari/Local.xcconfig
 .DS_Store
 logs/
+# Helper state: extension token and draft HTML (never commit)
+state/

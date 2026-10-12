@@ -6,7 +6,7 @@
 #   sh scripts/install_helper.sh --job-hunter /path/to/job-hunter
 #   sh scripts/install_helper.sh --uninstall
 #
-# Logs: logs/helper.log. The extension token is in <job-hunter>/data/apply-helper/token.
+# Logs: logs/helper.log. The extension token is in state/token.
 set -eu
 
 LABEL="com.justfillit.helper"
@@ -74,7 +74,7 @@ echo "Installed $LABEL (starts at login). Waiting for the helper..."
 i=0
 until curl -fs "http://127.0.0.1:8767/api/health" >/dev/null 2>&1 || [ $i -ge 30 ]; do sleep 1; i=$((i + 1)); done
 if curl -fs "http://127.0.0.1:8767/api/health" >/dev/null 2>&1; then
-  echo "Helper is running. Token for the extension: $JOB_HUNTER/data/apply-helper/token"
+  echo "Helper is running. Token for the extension: $ROOT/state/token"
 else
   echo "Helper didn't start yet; check $ROOT/logs/helper.log" >&2
 fi

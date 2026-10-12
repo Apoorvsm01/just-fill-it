@@ -210,10 +210,11 @@ class Composer:
     """Builds the pack, makes the one Claude call, renders the files. `runner` and `renderer` are
     injectable so tests need neither Claude nor Chromium."""
 
-    def __init__(self, project_root: Path, *, runner: Runner = run_subprocess, claude_bin: str = "claude",
+    def __init__(self, project_root: Path, *, work_root: Path, runner: Runner = run_subprocess, claude_bin: str = "claude",
                  renderer_factory: Callable[[], Any] = ac.Renderer, timeout: float = DEFAULT_TIMEOUT_SECONDS,
                  contact_loader: Callable[[], ContactInfo] | None = None, today: Callable[[], date] = date.today):
         self.root = Path(project_root).resolve()
+        self.work_root = Path(work_root)
         self.runner = runner
         self.claude_bin = claude_bin
         self.renderer_factory = renderer_factory
@@ -279,7 +280,7 @@ class Composer:
             "title": target.stem, "author": name,
             "subject": f"{title} resume", "keywords": ", ".join(draft.keywords),
         })
-        work = self.root / "data/apply-helper/work" / task.id
+        work = self.work_root / task.id
         work.mkdir(parents=True, exist_ok=True)
         atomic_write_text(work / f"{target.stem}.html", page)
         fill = round(min(height, ac.PAGE_HEIGHT_PX) / ac.PAGE_HEIGHT_PX * 100, 1)
@@ -338,9 +339,9 @@ class Composer:
 class TaskQueue:
     """Runs one composition at a time on a worker thread."""
 
-    def __init__(self, project_root: Path, composer: Composer | None = None):
+    def __init__(self, project_root: Path, composer: Composer):
         self.project_root = Path(project_root).resolve()
-        self.composer = composer or Composer(self.project_root)
+        self.composer = composer
         self._tasks: dict[str, Task] = {}
         self._pending: deque[str] = deque()
         self._lock = threading.Lock()

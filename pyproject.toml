@@ -3,6 +3,8 @@ name = "just-fill-it"
 version = "0.3.0"
 description = "Just Fill it!: one click from a job page to a tailored resume or cover letter, ready to drop into the application."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
   "job-hunter",

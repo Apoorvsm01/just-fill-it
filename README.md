@@ -224,9 +224,14 @@ browsers relearns nothing; only the material changes.
 
 ## Setup
 
-Just Fill it! is the front end. The backend is my fork of **[job-hunter](https://github.com/Apoorvsm01/job-hunter)**
+Just Fill it! is the front end. The backend is my fork of **[job-hunter](https://github.com/Apoorvsm01/job-hunter/tree/apoorv/main)**
 (originally by [gpokhark](https://github.com/gpokhark/job-hunter)), which holds the master resume, personalization
-rules and output folders. Clone both side by side:
+rules and output folders. Clone both side by side (job-hunter's `apoorv/main` branch):
+
+```sh
+git clone -b apoorv/main https://github.com/Apoorvsm01/job-hunter.git
+git clone https://github.com/Apoorvsm01/just-fill-it.git auto_apply_extension
+```
 
 ```
 Job Hunter App/
@@ -243,7 +248,7 @@ and Chrome and/or Safari (Xcode for Safari).
 2. **Chrome:** `chrome://extensions` → Developer mode → Load unpacked → `extension/`.
 3. **Safari:** `sh scripts/build_safari.sh` (signs with your Xcode team; `--adhoc` without an Apple ID), then
    Safari → Settings → Extensions → enable **Just Fill it!** and allow it on all websites.
-4. In the extension's settings, paste the token from `job-hunter/data/apply-helper/token`.
+4. In the extension's settings, paste the token from `state/token` (created on the helper's first start, git-ignored).
 
 Tests: `uv run pytest` (no network, no Claude and no browser needed).
 
@@ -296,3 +301,5 @@ New features are coming soon. Candidates on my list:
 
 Designed and built by **Apoorv Mahajan**, AI-native Product Designer ·
 [Portfolio](https://apoorvmahajan.framer.website) · [LinkedIn](https://linkedin.com/in/apoorvmahajan)
+
+Licensed under the [MIT License](LICENSE).
