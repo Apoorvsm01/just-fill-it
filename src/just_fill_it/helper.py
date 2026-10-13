@@ -137,13 +137,14 @@ def parse_claude_output(stdout: str) -> tuple[str, bool, dict[str, Any]]:
     return str(data.get("result") or "").strip(), bool(data.get("is_error")), dict(data.get("usage") or {})
 
 
-def claude_command(*, model: str, research: bool, claude_bin: str = "claude") -> list[str]:
-    """A lean, tool-free call: our own short system prompt instead of Claude Code's agent prompt, no
-    settings files, no MCP servers. The prompt itself goes on stdin."""
+def claude_command(*, model: str, research: bool, system_file: Path | str, claude_bin: str = "claude") -> list[str]:
+    """A lean, tool-free call: our own system prompt (from a file, so personal text never shows up in
+    the process list) instead of Claude Code's agent prompt, no settings files, no MCP servers. The
+    message goes on stdin."""
     tools = "WebSearch" if research else ""
     command = [
         claude_bin, "-p",
-        "--system-prompt", ac.SYSTEM_PROMPT,
+        "--system-prompt-file", str(system_file),
         "--setting-sources", "",
         "--strict-mcp-config",
         "--tools", tools,
@@ -151,15 +152,21 @@ def claude_command(*, model: str, research: bool, claude_bin: str = "claude") ->
         "--model", MODELS.get(model, model),
         "--output-format", "json",
     ]
+    if model == "fast":
+        # No extended thinking: the writing is one structured pass and Python enforces the page fit,
+        # so thinking only added ~3-5k hidden output tokens and ~20 s. (MAX_THINKING_TOKENS=0 and
+        # CLAUDE_CODE_DISABLE_THINKING=1 were not honored; this was, every time.) Best keeps it.
+        command += ["--effort", "low"]
     if research:
         command += ["--allowedTools", "WebSearch"]
     return command
 
 
 def usage_line(usage: dict[str, Any], seconds: float) -> str:
-    tokens_in = sum(int(usage.get(k) or 0) for k in
-                    ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
-    return f"{tokens_in:,} tokens in, {int(usage.get('output_tokens') or 0):,} out, {seconds:.0f}s"
+    new = sum(int(usage.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens"))
+    cached = int(usage.get("cache_read_input_tokens") or 0)
+    tokens_in = f"{new:,} tokens in" + (f" (+{cached:,} cached, ~1/10 cost)" if cached else "")
+    return f"{tokens_in}, {int(usage.get('output_tokens') or 0):,} out, {seconds:.0f}s"
 
 
 @dataclass
@@ -251,11 +258,17 @@ class Composer:
     def _jd_text(self, jd: SavedJd) -> str:
         return ac.strip_boilerplate(jd.path.read_text(encoding="utf-8"))
 
-    def _call(self, prompt: str, *, model: str, research: bool) -> tuple[dict[str, Any], dict[str, Any], float]:
+    def _system(self, personalization: str) -> str:
+        return ac.system_context(personalization, self._master_resume())
+
+    def _call(self, system: str, prompt: str, *, model: str, research: bool) -> tuple[dict[str, Any], dict[str, Any], float]:
         started = time.time()
         with tempfile.TemporaryDirectory(prefix="just-fill-it-") as scratch:  # outside the repo: no CLAUDE.md
-            done = self.runner(claude_command(model=model, research=research, claude_bin=self.claude_bin),
-                               Path(scratch), self.timeout, prompt)
+            system_file = Path(scratch) / "system.txt"
+            system_file.write_text(system, encoding="utf-8")
+            command = claude_command(model=model, research=research, system_file=system_file,
+                                     claude_bin=self.claude_bin)
+            done = self.runner(command, Path(scratch), self.timeout, prompt)
         result, is_error, usage = parse_claude_output(done.stdout)
         if done.returncode != 0 or is_error:
             raise ac.CompositionError((result or done.stderr or f"claude exited {done.returncode}").strip()[-1500:])
@@ -265,10 +278,9 @@ class Composer:
     def resume(self, task: Task) -> tuple[list[Path], str]:
         personalization = self._personalization()
         layout = ac.parse_base_resume(self._base_template(personalization))
-        prompt = ac.resume_prompt(
-            layout, jd=self._jd_text(task.jd), master_resume=self._master_resume(),
-            rules=ac.personalization_sections(personalization, "resume-generator"), notes=task.notes)
-        data, usage, seconds = self._call(prompt, model=task.model, research=False)
+        prompt = ac.resume_prompt(layout, jd=self._jd_text(task.jd), personalization=personalization,
+                                  notes=task.notes)
+        data, usage, seconds = self._call(self._system(personalization), prompt, model=task.model, research=False)
         draft = ac.validate_resume(data, layout)
         title = ac.plain_title(draft.job_title or task.title)
         name = layout.name
@@ -298,12 +310,13 @@ class Composer:
     def cover_letter(self, task: Task) -> tuple[list[Path], str]:
         personalization = self._personalization()
         prompt = ac.letter_prompt(
-            jd=self._jd_text(task.jd), source_resume=self._letter_source_resume(task),
-            rules=ac.personalization_sections(personalization, "outreach-writer"),
+            jd=self._jd_text(task.jd), tailored_resume=self._tailored_resume(task),
+            personalization=personalization,
             style=self._read(RESUME_DIR / "Writing Style.md", required=False),
             letter_rules=self._read(RESUME_DIR / "coverletter.md", required=False),
             notes=task.notes, research=task.research)
-        data, usage, seconds = self._call(prompt, model=task.model, research=task.research)
+        data, usage, seconds = self._call(self._system(personalization), prompt, model=task.model,
+                                          research=task.research)
         draft = ac.validate_letter(data)
         contact = self.contact_loader()
         if not contact.name:
@@ -325,15 +338,16 @@ class Composer:
             f"Model: {task.model} ({usage_line(usage, seconds)}).") if x)
         return [target], report
 
-    def _letter_source_resume(self, task: Task) -> str:
-        """The tailored resume for this company if one exists (newest), else the master resume."""
+    def _tailored_resume(self, task: Task) -> str:
+        """The tailored resume for this company if one exists (newest), else "" (the master resume is
+        already in the system prompt)."""
         pdfs = sorted((p for p in task.jd.company_dir.glob("*Resume*.pdf")), key=lambda p: p.stat().st_mtime)
         if pdfs:
             from pypdf import PdfReader
             text = "\n".join(page.extract_text() or "" for page in PdfReader(pdfs[-1]).pages).strip()
             if text:
                 return text
-        return self._master_resume()
+        return ""
 
 
 class TaskQueue:

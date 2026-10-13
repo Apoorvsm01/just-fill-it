@@ -52,7 +52,7 @@ have to leave the job page.**
 - **Don't lose my work.** The panel survives reloads and page changes, and keeps my last 10 documents (5 shown)
   across tabs and restarts, each linked back to the job it was written for.
 - **Feel native.** Material 3 in Chrome, Liquid Glass in Safari: one product in each browser's own design language.
-- **Fast and cheap enough to use on every application.** About 30 seconds and ~18k tokens per resume.
+- **Fast and cheap enough to use on every application.** About 15 seconds and ~13k tokens per resume, and a second document within a few minutes reuses most of that from cache.
 
 ---
 
@@ -91,7 +91,7 @@ flowchart TD
     B --> C[Panel reads the posting:<br/>JSON-LD → LinkedIn panel → page text]
     C --> D[Optional: type instructions,<br/>pick Fast or Best, research on/off]
     D --> E[Create resume / Create cover letter]
-    E --> F[[Background, ~30 s:<br/>Claude writes, Python lays out]]
+    E --> F[[Background, ~15 s:<br/>Claude writes, Python lays out]]
     F --> G[PDF appears in the panel<br/>with Claude's notes]
     G --> H{Read it first?}
     H -- Yes --> I[Save → open]
@@ -105,8 +105,8 @@ flowchart TD
 | Steps per document | ~15 | 3 (open, create, drag/attach) |
 | App switches | 4 (browser, terminal, Finder, Preview) | 0 |
 | File pickers | 1–2 | 0 |
-| Time per resume | 1–2.5 min of agent time, plus my chat time | ~30 s, no attention needed |
-| Tokens per resume | 1.4M–4.4M (22–55 agent turns) | ~13k in + ~5k out (1 call) |
+| Time per resume | 1–2.5 min of agent time, plus my chat time | ~15 s, no attention needed |
+| Tokens per resume | 1.4M–4.4M (22–55 agent turns) | ~11k in + ~2k out (1 call); ~0.2k new + ~10k cached for the next one |
 
 ---
 
@@ -150,8 +150,14 @@ I redesigned the split of work between the model and the code:
   resume, so Python can fit the page by choosing between them instead of asking the model to rewrite.
 - The call runs **outside any repo** with its own short system prompt and no tools, so none of the irrelevant
   context loads.
+- **Only what the model needs, once.** Markdown markup, the contact header and rules Python already enforces
+  (file names, layout, bullet counts) are stripped before sending. The master resume and my rules for every
+  document sit in a system prompt that is identical across calls, so Claude caches it: a resume followed by its
+  cover letter pays about a tenth for the shared part.
+- **Fast mode skips extended thinking** (`--effort low`). It was ~60% of the output tokens and half the time,
+  and the page fit is enforced by code anyway; Best mode keeps it.
 
-Result: about 100× fewer tokens, about 5× faster, with the same rules and the same honesty constraints.
+Result: over 100× fewer tokens, about 10× faster, with the same rules and the same honesty constraints.
 
 ### Trust and safety
 

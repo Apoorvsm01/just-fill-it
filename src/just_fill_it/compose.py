@@ -55,16 +55,77 @@ def strip_boilerplate(jd_text: str) -> str:
     return "\n".join(b for b in blocks if not _BOILERPLATE.search(b)).strip()
 
 
-def personalization_sections(text: str, skill: str) -> str:
-    """The `## all` and `## <skill>` sections of personalization.md (the other skill's rules are
-    irrelevant to this document and only cost tokens)."""
+def personalization_sections(text: str, *sections: str) -> str:
+    """The named `## ` sections of personalization.md (another skill's rules are irrelevant to this
+    document and only cost tokens)."""
     keep, current = [], None
     for line in text.splitlines():
         if line.startswith("## "):
             current = line[3:].strip().lower()
-        if current in ("all", skill):
+        if current in sections:
             keep.append(line)
     return "\n".join(keep).strip()
+
+
+# Rules about files, layout and the contact header. This pipeline enforces them in code (the base
+# template fixes structure, bullet counts and header; Python names, renders and tags the PDF), so
+# sending them to the model only costs tokens.
+_MECHANICS = re.compile(
+    r"^-\s+(?:\*\*)?(?:file names?|pdf only|base template|ats-safe|bullet counts|length|"
+    r"always include the full contact line|portfolio is always)\b", re.I)
+
+
+def drop_mechanics(rules: str) -> str:
+    keep, skipping = [], False
+    for line in rules.splitlines():
+        if line.startswith(("- ", "#")) or not line.strip():
+            skipping = bool(_MECHANICS.match(line))
+        if not skipping:
+            keep.append(line)
+    return "\n".join(keep)
+
+
+def drop_format_section(rules: str) -> str:
+    """coverletter.md's "Format" section (header, date, recipient block, file types): Python renders
+    all of that, and the reply's schema covers the recipient and sign-off."""
+    keep, skipping = [], False
+    for line in rules.splitlines():
+        if line.startswith("## "):
+            skipping = bool(re.match(r"##\s+(?:\d+\.\s*)?format\b", line, re.I))
+        if not skipping:
+            keep.append(line)
+    return "\n".join(keep)
+
+
+_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)\s]*\)")
+_MD_ITALIC = re.compile(r"(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])")
+_DATED = re.compile(r"\s*\(\d{4}-\d{2}-\d{2}[^)]*\)")
+
+
+def compact_markdown(text: str) -> str:
+    """Same words, fewer tokens: no bold/italic markers, link targets, rules (---), blank lines,
+    trailing spaces or "(2026-10-05)" date stamps. HTML comments stay (legacy tailoring notes)."""
+    out = []
+    for line in text.splitlines():
+        line = _MD_LINK.sub(r"\1", line).replace("**", "")
+        line = _DATED.sub("", _MD_ITALIC.sub(r"\1", line)).rstrip()
+        if line.strip() and line.strip() not in ("---", "***", "___"):
+            out.append(line)
+    return "\n".join(out)
+
+
+def resume_facts(master_resume: str, *, keep_education: bool = False) -> str:
+    """The master resume as a fact source: no name/contact header above the first `## ` section
+    (Python prints the contact lines) and, for a resume, no education section (fixed by the base
+    template)."""
+    keep, section = [], None
+    for line in master_resume.splitlines():
+        if re.match(r"##\s", line):
+            section = re.sub(r"[^a-z]", "", line.lower())
+        if section is None or (not keep_education and "education" in section):
+            continue
+        keep.append(line)
+    return compact_markdown("\n".join(keep) if keep else master_resume)
 
 
 def portfolio_url(personalization: str) -> str | None:
@@ -191,12 +252,47 @@ def parse_model_json(text: str) -> dict[str, Any]:
     try:
         return json.loads(text[start:end + 1])
     except json.JSONDecodeError as exc:
-        raise CompositionError(f"the model returned invalid JSON: {exc}") from exc
+        repaired = _close_brackets(text[start:end + 1])
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            raise CompositionError(f"the model returned invalid JSON: {exc}") from exc
+
+
+def _close_brackets(text: str) -> str:
+    """Append the closers a reply forgot (seen without extended thinking: `roles` left open before
+    `skills`). Where they belong is fixed afterwards by `_hoist`; validation rejects anything else."""
+    stack, in_string, escaped = [], False, False
+    for ch in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+        elif ch in "}]" and stack:
+            stack.pop()
+    return text + "".join(reversed(stack))
+
+
+def _hoist(data: dict[str, Any], fields: set[str]) -> dict[str, Any]:
+    """Move top-level fields that ended up inside a nested object (a missed closer) back up."""
+    for value in list(data.values()):
+        if isinstance(value, dict):
+            for key in fields & value.keys() - data.keys():
+                data[key] = value.pop(key)
+    return data
 
 
 def validate_resume(data: dict[str, Any], layout: ResumeLayout) -> ResumeDraft:
     try:
-        draft = ResumeDraft.model_validate(data)
+        draft = ResumeDraft.model_validate(_hoist(data, set(ResumeDraft.model_fields)))
     except ValidationError as exc:
         raise CompositionError(f"resume JSON has the wrong shape: {exc.errors()[:3]}") from exc
     for role in layout.roles:
@@ -210,7 +306,7 @@ def validate_resume(data: dict[str, Any], layout: ResumeLayout) -> ResumeDraft:
 
 def validate_letter(data: dict[str, Any]) -> LetterDraft:
     try:
-        return LetterDraft.model_validate(data)
+        return LetterDraft.model_validate(_hoist(data, set(LetterDraft.model_fields)))
     except ValidationError as exc:
         raise CompositionError(f"cover letter JSON has the wrong shape: {exc.errors()[:3]}") from exc
 
@@ -231,6 +327,19 @@ def _block(title: str, body: str) -> str:
     return f"<{title}>\n{body.strip()}\n</{title}>"
 
 
+def system_context(personalization: str, master_resume: str) -> str:
+    """The system prompt shared by every resume and letter: the instructions, the rules for all
+    documents and the master resume. It is identical across calls, so Claude caches it and a second
+    document within the cache window reads it at a tenth of the cost; per-document text goes in the
+    message."""
+    return "\n\n".join([
+        SYSTEM_PROMPT,
+        _block("applicant_rules_for_every_document",
+               compact_markdown(personalization_sections(personalization, "all"))),
+        _block("master_resume", resume_facts(master_resume, keep_education=True)),
+    ])
+
+
 def budgets(text: str) -> tuple[int, int]:
     """(long, short) character budgets that keep a rewrite on as many lines as the base text: the
     base resume is calibrated to fill one page, so the rewrite must not add lines."""
@@ -240,7 +349,8 @@ def budgets(text: str) -> tuple[int, int]:
     return long_max, short_max
 
 
-def resume_prompt(layout: ResumeLayout, *, jd: str, master_resume: str, rules: str, notes: str) -> str:
+def resume_prompt(layout: ResumeLayout, *, jd: str, personalization: str, notes: str) -> str:
+    """The message for one resume; the master resume and shared rules are in `system_context`."""
     def bullet(b: str) -> str:
         long_max, short_max = budgets(b)
         return f"    * [long <= {long_max} chars, short <= {short_max} chars] {b}"
@@ -267,15 +377,15 @@ def resume_prompt(layout: ResumeLayout, *, jd: str, master_resume: str, rules: s
         "resume: same roles in the same order with exactly the listed number of bullets each, a summary "
         "paragraph, a How I Design statement, and exactly 2 skills lines. Rewrite bullets toward the job's "
         "keywords using only facts from the base resume and master resume. Each bullet: action verb first, "
-        "intent -> design -> how people reacted. The page is already full: every bullet, the summary and "
+        "intent -> design -> how people reacted, no 'Label:' prefix. The page is already full: every bullet, the summary and "
         "the How I Design statement must stay within its character budget (count characters, not words; "
         "going over adds a line and pushes the resume to two pages). Each skills line <= 105 characters.",
         _block("base_resume_roles", roles),
         _block("base_summary", layout.summary),
         _block("base_how_i_design", layout.how_i_design),
         _block("base_skills", "\n".join(layout.skills)),
-        _block("applicant_rules", rules),
-        _block("master_resume", master_resume),
+        _block("resume_rules", compact_markdown(drop_mechanics(
+            personalization_sections(personalization, "resume-generator")))),
         _block("job_description", jd),
     ]
     if notes.strip():
@@ -302,8 +412,9 @@ LETTER_QUALITY = """\
   ungrammatical."""
 
 
-def letter_prompt(*, jd: str, source_resume: str, rules: str, style: str, letter_rules: str, notes: str,
-                  research: bool) -> str:
+def letter_prompt(*, jd: str, tailored_resume: str, personalization: str, style: str, letter_rules: str,
+                  notes: str, research: bool) -> str:
+    """The message for one letter; the master resume and shared rules are in `system_context`."""
     schema = {
         "recipient": "hiring manager's name if the job gives one, else 'Hiring Manager'",
         "company": "company name",
@@ -327,12 +438,14 @@ def letter_prompt(*, jd: str, source_resume: str, rules: str, style: str, letter
         "Write the applicant's cover letter for the job below, following their cover-letter rules, "
         "writing style and personalization rules. " + research_line,
         _block("quality_bar", LETTER_QUALITY),
-        _block("cover_letter_rules", letter_rules),
-        _block("writing_style", style),
-        _block("applicant_rules", rules),
-        _block("applicant_resume", source_resume),
-        _block("job_description", jd),
+        _block("cover_letter_rules", compact_markdown(drop_format_section(letter_rules))),
+        _block("writing_style", compact_markdown(style)),
+        _block("letter_rules", compact_markdown(drop_mechanics(
+            personalization_sections(personalization, "outreach-writer")))),
     ]
+    if tailored_resume.strip():
+        parts.append(_block("resume_sent_with_this_application", tailored_resume))
+    parts.append(_block("job_description", jd))
     if notes.strip():
         parts.append(_block("applicant_instructions_for_this_run", notes))
     parts.append("Reply with JSON in exactly this shape:\n" + json.dumps(schema, indent=1))

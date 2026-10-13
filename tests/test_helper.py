@@ -159,7 +159,8 @@ class FakeRenderer:
 def fake_claude(payload, calls=None, returncode=0):
     def run(command, cwd, timeout, stdin_text):
         if calls is not None:
-            calls.append({"command": command, "cwd": cwd, "stdin": stdin_text})
+            system = Path(command[command.index("--system-prompt-file") + 1]).read_text()
+            calls.append({"command": command, "cwd": cwd, "stdin": stdin_text, "system": system})
         body = {"result": json.dumps(payload), "is_error": False, "usage": {"input_tokens": 1200, "output_tokens": 900}}
         return subprocess.CompletedProcess(command, returncode, json.dumps(body), "boom")
     return run
@@ -195,14 +196,15 @@ def run_job(tmp_path, payload=None, calls=None, returncode=0, **page_overrides):
 
 
 def test_lean_claude_command():
-    command = claude_command(model="fast", research=False)
+    command = claude_command(model="fast", research=False, system_file="/tmp/s.txt")
     assert command[:2] == ["claude", "-p"]
+    assert command[command.index("--system-prompt-file") + 1] == "/tmp/s.txt"
     assert command[command.index("--tools") + 1] == ""
     assert command[command.index("--setting-sources") + 1] == ""
     assert command[command.index("--model") + 1] == "sonnet"
-    assert "--strict-mcp-config" in command and "--system-prompt" in command
+    assert "--strict-mcp-config" in command
     assert "--allowedTools" not in command
-    research = claude_command(model="best", research=True)
+    research = claude_command(model="best", research=True, system_file="/tmp/s.txt")
     assert research[research.index("--tools") + 1] == "WebSearch"
     assert research[research.index("--model") + 1] == "opus"
     assert research[-2:] == ["--allowedTools", "WebSearch"]
@@ -217,9 +219,11 @@ def test_resume_one_shot_pack_layout_and_files(tmp_path):
     assert pdf.parent.name == "Acme_Corp"
     call = calls[0]
     assert not str(call["cwd"]).startswith(str(tmp_path))  # runs outside the repo: no CLAUDE.md
-    prompt = call["stdin"]
+    prompt, system = call["stdin"], call["system"]
     assert "Design acquisition and purchase funnel" in prompt and "lead with design systems" in prompt
-    assert "Facts rule for everyone" in prompt and "jane.example.com" not in prompt  # only this skill's rules
+    assert "Facts rule for everyone" in system and "Designer at Acme Labs" in system  # shared, cacheable
+    assert "Facts rule for everyone" not in prompt and "jane.example.com" not in prompt  # only this skill's rules
+    assert call["command"][-2:] == ["--effort", "low"]  # fast: no extended thinking
     assert 'key "acme_labs"' in prompt and "exactly 2 bullets" in prompt
     html_text = pdf.with_suffix(".html.txt").read_text()
     assert "&lt;b&gt;flows&lt;/b&gt;" in html_text and "<b>flows" not in html_text  # model text is escaped
@@ -276,6 +280,7 @@ def test_cover_letter_one_shot(tmp_path):
     assert command[command.index("--tools") + 1] == "WebSearch"
     assert "at most 2 searches" in calls[0]["stdin"] and "100 words max" in calls[0]["stdin"]
     assert "No fragments" in calls[0]["stdin"] and "Never offer to relocate" in calls[0]["stdin"]
+    assert "Designer at Acme Labs" in calls[0]["system"] and "--effort" not in calls[0]["command"]
     html_text = pdf.with_suffix(".html.txt").read_text()
     assert "https://jane.example.com" in html_text and "Thanks and Regards,<br>Jane Doe" in html_text
     assert "Body: 5 words" in task.report and "acme.example/news" in task.report
@@ -298,6 +303,41 @@ def test_composition_failures_are_reported(tmp_path, payload, code, needle):
     task = run_job(tmp_path, payload=payload, returncode=code)
     assert task.status is TaskStatus.FAILED
     assert needle in task.error or (code and task.error)
+
+
+def test_compact_context_keeps_facts_and_drops_markup():
+    master = ("# **Jane Doe**\n\n[jane@example.com](mailto:jane@example.com) | 555\n\n---\n\n## **SUMMARY**\n\n"
+              "**Designer** with *6 years*  \n\n## **EDUCATION**\n\n* **M.S. HCI**  \n  *Example U* | 2025\n"
+              "\n## **WORK**\n\n* Led **checkout** redesign <!-- NOTE (tailoring rule): keep -->")
+    facts = ac.resume_facts(master)
+    assert "jane@example.com" not in facts and "Jane Doe" not in facts and "M.S. HCI" not in facts
+    assert "Designer with 6 years" in facts and "* Led checkout redesign" in facts and "NOTE (tailoring rule)" in facts
+    assert "**" not in facts and "---" not in facts and "\n\n" not in facts
+    assert "M.S. HCI" in ac.resume_facts(master, keep_education=True)
+    rules = ("## resume-generator\n- **File name (2026-10-11):** name it X\n  and Y.\n"
+             "- **Never use the 25% figure** (cut).\n- **PDF only:** pdf\n- Always include the full contact line.\n"
+             "- **Summary is a paragraph (2026-10-05).**")
+    kept = ac.compact_markdown(ac.drop_mechanics(rules))
+    assert "name it X" not in kept and "and Y" not in kept and "pdf" not in kept and "contact line" not in kept
+    assert "Never use the 25% figure (cut)." in kept and "- Summary is a paragraph." in kept
+
+
+def test_missed_closer_is_repaired_and_fields_hoisted(tmp_path):
+    layout = ac.parse_base_resume(fake_project(tmp_path) / "data/output/Role_Tracks/base.html")
+    good = json.dumps(RESUME_JSON)
+    roles_end = good.index(', "skills"')
+    broken = good[:roles_end - 1] + good[roles_end:]  # drop the brace that closes "roles"
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(broken)
+    draft = ac.validate_resume(ac.parse_model_json(broken), layout)
+    assert draft.skills[0].label == "Design" and set(draft.roles) == {"acme_labs", "beta_co"}
+    assert ac.parse_model_json('{"a": "say \\"hi\\" {", "b": {"c": 1}') == {"a": 'say "hi" {', "b": {"c": 1}}
+
+
+def test_letter_format_section_is_dropped():
+    rules = "## 6. Story bank\n- Story A\n\n## 7. Format\n- Header: name\n\n## 8. Checklist\n- [ ] counted"
+    kept = ac.drop_format_section(rules)
+    assert "Story A" in kept and "Header: name" not in kept and "counted" in kept
 
 
 def test_strip_boilerplate_keeps_role_content():
